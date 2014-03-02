@@ -1,0 +1,2 @@
+plugin-indexer-solr
+===================
