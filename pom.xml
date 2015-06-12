@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.googlecode.the-fascinator.plugins</groupId>
     <artifactId>plugin-indexer-solr</artifactId>
-    <version>1.3</version>
+    <version>1.4-SNAPSHOT</version>
     <name>The Fascinator - Plugin - Indexer - Solr</name>
     <url>http://fascinator.usq.edu.au/trac/wiki/tf2/DeveloperNotes/plugins/indexer/solr</url>
     <parent>
@@ -15,12 +15,12 @@
         <dependency>
             <groupId>com.googlecode.the-fascinator</groupId>
             <artifactId>fascinator-common</artifactId>
-            <version>1.3</version>
+            <version>1.4-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>com.googlecode.the-fascinator</groupId>
             <artifactId>fascinator-plugin-api</artifactId>
-            <version>1.3</version>
+            <version>1.4-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>dom4j</groupId>
