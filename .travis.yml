@@ -1,0 +1,19 @@
+sudo: required
+language: java
+services:
+- docker
+before_install:
+- mkdir /tmp/build
+- docker pull qcifengineering/redbox-builder
+- docker run -v /tmp/build:/build -e "CLONEPATH=https://github.com/the-fascinator/plugin-indexer-solr.git"
+  qcifengineering/redbox-builder
+install: true
+script: true
+after_success:
+- docker run -v /tmp/build:/build -e "SONATYPE_USERNAME=$SONATYPE_USERNAME" -e "SONATYPE_PASSWORD=$SONATYPE_PASSWORD"
+  qcifengineering/redbox-builder /bin/bash -c "cd build/src;mvn --settings /m2_repo/travis-settings.xml
+  -Dmaven.repo.local=/m2_repo -DskipTests=true deploy"
+env:
+  global:
+  - secure: XjTqDZ+00nUpu4LoTb5nX9KFUlivehfZy9nLRM0VIBY6sc4CZyhrhWtj8Lidvgkp8buEcnQpVPvCY7T8D+zMAftQWXCb7cDhnFVpcuGKWBk7OD7RumvhFGhHfocoKP7Dl9FATQQvz1M4fZCtN/7DjIgAouOG4mV6J71420fpwjxngf3nceQHmxTQcVxVslNjR5k2Bxd4eP4bqOHs098MVEoDcylxjeV7Ha1ozdLKodX8URQ7D0W8IUBEqKWYyikurtMqded5i5698vp8oDi8I26yOg7xPqHYqig194rEGx0kdVH1SX7Ja3pemvDGXdgwNKBm+g87NhXYlNicxuH2wsWmhwGYEKtHb/LwHcKIUnYWnCc7cOfmIxar5fhwLMO26deBzGw69In28rKHSlPXgOonC8mCS0HhlwAOVsDDobNbdV2X26ZAMwKWJxww12I4mRYrrTA16HBTk8aYNrAZ3FK5xqv7G0HLGQ2s2M8Sey9DwXlizJg/XaA0VxkHITE2mXkh4tUY8ONbIC0xRpEjitRg8G3CBieGgsqoF5i0xrYt9jdBpF9yhCr7amlJ+oIPI1ovJj0gFVujo9un4MmhTvRRwvn2ZSCrnsZ8BcHWL42ZlEIlOhX9oEeohYBTpXqT+UcGsjAnUfmvVa2AxUIo4M4RpfdT2p/MDH5TxtrHIZs=
+  - secure: eu5trkrB0ZRNsLkTANePW5jt620zAEbc8eVnLvqN6dS8r8KzWsS8jZXY7DnivQr7g1CjUslUmu5xUtORPAog7cy5hAAnt9/KtKZ5hr3kNwN78LuyHO4MoZpuHfD1BZ3yeYy1Ld8gJIZuoczrXTh6Yxyj2kibNSg0Uw6WcjZaBa/NhTK95Born+Xbd9P2qfrBepb00EywO823o/SuLANN8UyQQxTvLj7Es1GFZpx/ZvSM7z27mDvSyVaeEwnEnDbLpT6FUwjSSG1FJilB+kFL1rUVUyHyNJhmF6V1Lj9Om3sy0alRh9wiJ6vARW4jZBsWDn/Vx1zPc4RZ5XEDhDTZHgu5gu26TFYbdOurPIpUXZUfFPG2lThJCtpNdD3oJYlYLjYp+Xx4fP2037TxmrtzAR1raVDbHrVnfSPMZv5Rnb/lIWZwB6sUn5IdS65jpBjgKS33Hv2ycfrwRixj8xMB97rX4frtPkwF+RCMWrM4ztB1i0Y8LYhyAKoGJIaRnptFlvGvgaHDolmcGSPYXAnhkF/hg7P3P18F5U6VIjmu3/oFYzbEohwTL8LANI0uPPje8iZYnPuHU1BnAsQMzt3abAie8isULXRCQVnPNNWU2mlagoV0+3z6CkHfjUc44KJ4rKxSwO2rXCsC/rsH+k5fY0z2vXe3IGqkyQoxCNur27s=
