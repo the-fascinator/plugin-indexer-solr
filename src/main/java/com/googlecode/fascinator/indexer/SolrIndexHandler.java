@@ -40,10 +40,6 @@ import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import javax.naming.directory.SearchResult;
 import javax.script.ScriptContext;
@@ -165,7 +161,7 @@ import com.googlecode.fascinator.common.solr.SolrDoc;
  * @author Greg Pendlebury
  */
 
-public class SolrIndexer implements Indexer {
+public class SolrIndexHandler{
 
 	/** A fake OID for Anotar - Used in caching/execution */
 	private static String ANOTAR_RULES_OID = "FakeAnotarRulesOid1234";
@@ -183,7 +179,7 @@ public class SolrIndexer implements Indexer {
 	private String propertiesId;
 
 	/** Logging */
-	private Logger log = LoggerFactory.getLogger(SolrIndexer.class);
+	private Logger log = LoggerFactory.getLogger(SolrIndexHandler.class);
 
 	/** Configuration */
 	private JsonSimpleConfig config;
@@ -234,78 +230,34 @@ public class SolrIndexer implements Indexer {
 
 	private ScriptEngine engine;
 
-	private SolrIndexHandler solrIndexHandler;
 
-	/**
-	 * Get the ID of the plugin
-	 * 
-	 * @return String : The ID of this plugin
-	 */
-	@Override
-	public String getId() {
-		return "solr";
+	private PythonUtils getPyUtils() throws IndexerException {
+		if (pyUtils == null) {
+			try {
+				pyUtils = new PythonUtils(config);
+			} catch (PluginException ex) {
+				throw new IndexerException(ex);
+			}
+		}
+		return pyUtils;
 	}
 
-	/**
-	 * Get the name of the plugin
-	 * 
-	 * @return String : The name of this plugin
-	 */
-	@Override
-	public String getName() {
-		return "Apache Solr Indexer";
+	private MessagingServices getMessaging() {
+		if (messaging == null) {
+			try {
+				messaging = MessagingServices.getInstance();
+			} catch (MessagingException ex) {
+				log.error("Failed to start connection: {}", ex.getMessage());
+			}
+		}
+		return messaging;
 	}
 
-	/**
-	 * Gets a PluginDescription object relating to this plugin.
-	 * 
-	 * @return a PluginDescription
-	 */
-	@Override
-	public PluginDescription getPluginDetails() {
-		return new PluginDescription(this);
-	}
-
-
-	public SolrIndexer() {
+	public SolrIndexHandler() {
 		loaded = false;
 	}
 
-	/**
-	 * Initialize the plugin
-	 * 
-	 * @param jsonString
-	 *            The JSON configuration to use as a string
-	 * @throws IndexerException
-	 *             if errors occur during initialization
-	 */
-	@Override
-	public void init(String jsonString) throws IndexerException {
-		try {
-			config = new JsonSimpleConfig(jsonString);
-			init();
-		} catch (IOException e) {
-			throw new IndexerException(e);
-		}
-	}
-
-	/**
-	 * Initialize the plugin
-	 * 
-	 * @param jsonFile
-	 *            A file containing the JSON configuration
-	 * @throws IndexerException
-	 *             if errors occur during initialization
-	 */
-	@Override
-	public void init(File jsonFile) throws IndexerException {
-		try {
-			config = new JsonSimpleConfig(jsonFile);
-			init();
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
+	
 
 	/**
 	 * Private method wrapped by the above two methods to perform the actual
@@ -317,8 +269,7 @@ public class SolrIndexer implements Indexer {
 	private void init() throws IndexerException {
 		if (!loaded) {
 			loaded = true;
-			this.solrIndexHandler = new SolrIndexHandler();
-			this.solrIndexHandler.setConfig(config);
+
 			String storageType = config.getString(null, "storage", "type");
 			try {
 				storage = PluginManager.getStorage(storageType);
@@ -326,22 +277,16 @@ public class SolrIndexer implements Indexer {
 			} catch (PluginException pe) {
 				throw new IndexerException(pe);
 			}
-			solrIndexHandler.setStorage(storage);
-			
+
 			// Credentials
-			usernameMap = new ConcurrentHashMap<String, String>();
-			passwordMap = new ConcurrentHashMap<String, String>();
-			solrIndexHandler.setUsernameMap(usernameMap);
-			solrIndexHandler.setPasswordMap(passwordMap);
-			
+			usernameMap = new HashMap<String, String>();
+			passwordMap = new HashMap<String, String>();
+
 			solr = initCore("solr");
 			anotar = initCore("anotar");
-			solrIndexHandler.setSolr(solr);
-			solrIndexHandler.setAnotar(anotar);
-			
+
 			// initialise non-hardcoded indexers
-			solrServerMap = new ConcurrentHashMap<String, SolrServer>();
-			
+			solrServerMap = new HashMap<String, SolrServer>();
 			JsonObject indexerConfig = config.getObject("indexer");
 
 			List<String> hardcodedValues = Arrays.asList("type", "properties", "useCache", "buffer", "solr", "anotar");
@@ -353,24 +298,18 @@ public class SolrIndexer implements Indexer {
 					}
 				}
 			}
-			solrIndexHandler.setSolrServerMap(solrServerMap);
-			
+
 			anotarAutoCommit = config.getBoolean(true, "indexer", "anotar", "autocommit");
-			solrIndexHandler.setAnotarAutoCommit(anotarAutoCommit);
 			propertiesId = config.getString(DEFAULT_METADATA_PAYLOAD, "indexer", "propertiesId");
-			solrIndexHandler.setPropertiesId(propertiesId);
-			
-			customParams = new ConcurrentHashMap<String, String>();
-			solrIndexHandler.setCustomParams(customParams);
+
+			customParams = new HashMap<String, String>();
+
 			// Caching
-			scriptCache = new ConcurrentHashMap<String, PyObject>();
-			solrIndexHandler.setScriptCache(scriptCache);
-			groovyScriptCache = new ConcurrentHashMap<String, String>();
-			solrIndexHandler.setGroovyScriptCache(groovyScriptCache);
-			configCache = new ConcurrentHashMap<String, JsonSimpleConfig>();
-			solrIndexHandler.setConfigCache(configCache);
+			scriptCache = new HashMap<String, PyObject>();
+			groovyScriptCache = new HashMap<String, String>();
+			configCache = new HashMap<String, JsonSimpleConfig>();
 			useCache = config.getBoolean(true, "indexer", "useCache");
-			solrIndexHandler.setUseCache(useCache);
+
 		}
 		loaded = true;
 	}
@@ -403,8 +342,8 @@ public class SolrIndexer implements Indexer {
 			}
 			URI solrUri = new URI(uri);
 			CommonsHttpSolrServer thisCore = new CommonsHttpSolrServer(solrUri.toURL());
-			String username = config.getString("", "indexer", coreName, "username");
-			String password = config.getString("", "indexer", coreName, "password");
+			String username = config.getString(null, "indexer", coreName, "username");
+			String password = config.getString(null, "indexer", coreName, "password");
 			usernameMap.put(coreName, username);
 			passwordMap.put(coreName, password);
 			if (!username.equals("") && !password.equals("")) {
@@ -423,17 +362,6 @@ public class SolrIndexer implements Indexer {
 	}
 
 	/**
-	 * Shutdown the plugin
-	 * 
-	 * @throws PluginException
-	 *             if any errors occur during shutdown
-	 */
-	@Override
-	public void shutdown() throws PluginException {
-		solrIndexHandler.shutdown();
-	}
-
-	/**
 	 * Return a reference to this plugins instantiated storage layer
 	 * 
 	 * @return Storage : the storage API being used
@@ -442,214 +370,73 @@ public class SolrIndexer implements Indexer {
 		return storage;
 	}
 
-	/**
-	 * Perform a Solr search and stream the results into the provided output
-	 * 
-	 * @param request
-	 *            : A prepared SearchRequest object
-	 * @param response
-	 *            : The OutputStream to send results to
-	 * @throws IndexerException
-	 *             if there were errors during the search
-	 */
-	@Override
-	public void search(SearchRequest request, OutputStream response) throws IndexerException {
-		SolrSearcher searcher = new SolrSearcher(((CommonsHttpSolrServer) solr).getBaseURL());
-		String username = usernameMap.get("solr");
-		String password = passwordMap.get("solr");
-		if (!username.equals("") && !password.equals("")) {
-			searcher.authenticate(username, password);
-		}
-		InputStream result;
-		try {
-			request.addParam("wt", "json");
-			result = searcher.get(request.getQuery(), request.getParamsMap(), false);
-			IOUtils.copy(result, response);
-			result.close();
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
+	
 
-	/**
-	 * Perform a Solr search and stream the results into the provided output
-	 * format
-	 * 
-	 * @param request
-	 *            : A prepared SearchRequest object
-	 * @param response
-	 *            : The OutputStream to send results to
-	 * @param format
-	 *            : Output format - passed directly to SOlr as the "wt"
-	 *            parameter
-	 * @throws IndexerException
-	 *             if there were errors during the search
-	 */
-	@Override
-	public void search(SearchRequest request, OutputStream response, String format) throws IndexerException {
-		SolrSearcher searcher = new SolrSearcher(((CommonsHttpSolrServer) solr).getBaseURL());
-		String username = usernameMap.get("solr");
-		String password = passwordMap.get("solr");
-		if (!username.equals("") && !password.equals("")) {
-			searcher.authenticate(username, password);
-		}
-		InputStream result;
-		try {
-			request.addParam("wt", format);
-			result = searcher.get(request.getQuery(), request.getParamsMap(), false);
-			IOUtils.copy(result, response);
-			result.close();
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
-
-	/**
-	 * Remove the specified object from the index
-	 * 
-	 * @param oid
-	 *            : The identifier of the object to remove
-	 * @throws IndexerException
-	 *             if there were errors during removal
-	 */
-	@Override
-	public void remove(String oid) throws IndexerException {
-		log.debug("Deleting " + oid + " from index");
-		try {
-			solr.deleteByQuery("storage_id:\"" + oid + "\"");
-			solr.commit();
-		} catch (SolrServerException sse) {
-			throw new IndexerException(sse);
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
-
-	/**
-	 * Remove the specified payload from the index
-	 * 
-	 * @param oid
-	 *            : The identifier of the payload's object
-	 * @param pid
-	 *            : The identifier of the payload to remove
-	 * @throws IndexerException
-	 *             if there were errors during removal
-	 */
-	@Override
-	public void remove(String oid, String pid) throws IndexerException {
-		log.debug("Deleting {}::{} from index", oid, pid);
-		try {
-			solr.deleteByQuery("storage_id:\"" + oid + "\" AND identifer:\"" + pid + "\"");
-			solr.commit();
-		} catch (SolrServerException sse) {
-			throw new IndexerException(sse);
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
-
-	/**
-	 * Remove all annotations from the index against an object
-	 * 
-	 * @param oid
-	 *            : The identifier of the object
-	 * @throws IndexerException
-	 *             if there were errors during removal
-	 */
-	@Override
-	public void annotateRemove(String oid) throws IndexerException {
-		log.debug("Deleting " + oid + " from Anotar index");
-		try {
-			anotar.deleteByQuery("rootUri:\"" + oid + "\"");
-			anotar.commit();
-		} catch (SolrServerException sse) {
-			throw new IndexerException(sse);
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
-
-	/**
-	 * Remove the specified annotation from the index
-	 * 
-	 * @param oid
-	 *            : The identifier of the object
-	 * @param annoId
-	 *            : The identifier of the annotation
-	 * @throws IndexerException
-	 *             if there were errors during removal
-	 */
-	@Override
-	public void annotateRemove(String oid, String annoId) throws IndexerException {
-		log.debug("Deleting {}::{} from Anotar index", oid, annoId);
-		try {
-			anotar.deleteByQuery("rootUri:\"" + oid + "\" AND id:\"" + annoId + "\"");
-			anotar.commit();
-		} catch (SolrServerException sse) {
-			throw new IndexerException(sse);
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
-
-	/**
-	 * Index an object and all of its payloads
-	 * 
-	 * @param oid
-	 *            : The identifier of the object
-	 * @throws IndexerException
-	 *             if there were errors during indexing
-	 */
-	@Override
-	public void index(String oid) throws IndexerException {
-		try {
-			DigitalObject object = storage.getObject(oid);
-			// Some workflow actions create payloads, so we can't iterate
-			// directly against the object.
-			String[] oldManifest = {};
-			oldManifest = object.getPayloadIdList().toArray(oldManifest);
-			ExecutorService executor = Executors.newFixedThreadPool(5);
-			List<Future<SimpleEntry<String,String>>> futures = new ArrayList<Future<SimpleEntry<String,String>>>();
-			for (String payloadId : oldManifest) {
-				Payload payload = object.getPayload(payloadId);
-				IndexPayloadThread indexPayloadThread = new IndexPayloadThread(object, payload, solrIndexHandler);
-				futures.add(executor.submit(indexPayloadThread));
-			}
-			executor.shutdown();
-			for (Future<SimpleEntry<String, String>> future : futures) {
-				SimpleEntry<String, String> result = future.get();
-				if(result.getKey() != null) {
-					addToBuffer(result.getKey(), result.getValue());
-				}
-			}
-			
-		} catch (Exception ex) {
-			throw new IndexerException(ex);
-		}
-	}
+	
 
 	/**
 	 * Index a specific payload
 	 * 
-	 * @param oid
-	 *            : The identifier of the payload's object
+	 * @param object
+	 *            : The payload's object
 	 * @param pid
-	 *            : The identifier of the payload
+	 *            : The payload
+	 * @return 
 	 * @throws IndexerException
 	 *             if there were errors during indexing
 	 */
-	@Override
-	public void index(String oid, String pid) throws IndexerException {
-		try {
-			DigitalObject object = storage.getObject(oid);
-			Payload payload = object.getPayload(pid);
-			solrIndexHandler.index(object, payload);
-		} catch (StorageException ex) {
-			throw new IndexerException(ex);
+	public SimpleEntry<String, String> index(DigitalObject object, Payload payload) throws IndexerException {
+		String oid = object.getId();
+		String pid = payload.getId();
+
+		// Don't proccess annotations through this function
+		if (pid.startsWith("anotar.")) {
+			annotate(object, payload);
+			return new SimpleEntry<String, String>(null, null);
 		}
+		// log.info("Indexing OID:'{}', PID: '{}'", oid, pid);
+
+		// get the indexer properties or we can't index
+		Properties props;
+		try {
+			props = object.getMetadata();
+		} catch (StorageException ex) {
+			throw new IndexerException("Failed loading properties : ", ex);
+		}
+
+		try {
+			// Get the harvest files
+			String confOid = props.getProperty("jsonConfigOid");
+			String rulesOid = props.getProperty("rulesOid");
+			String scriptType = props.getProperty("scriptType");
+			String doc;
+			// Generate the Solr document
+			if ("groovy".equals(scriptType) || StringUtils.isBlank(scriptType)) {
+				doc = indexByGroovyScript(object, payload, confOid, rulesOid, props);
+			} else {
+				doc = indexByPythonScript(object, payload, confOid, rulesOid, props);
+			}
+
+			// Did the indexer alter metadata?
+			String toClose = props.getProperty("objectRequiresClose");
+			if (toClose != null) {
+				log.debug("Indexing has altered metadata, closing object.");
+				props.remove("objectRequiresClose");
+				object.close();
+				try {
+					props = object.getMetadata();
+				} catch (StorageException ex) {
+					throw new IndexerException("Failed loading properties : ", ex);
+				}
+			}
+
+			return new SimpleEntry<String, String>(oid + "/" + pid, doc);
+		} catch (Exception e) {
+			log.error("Indexing failed!\n-----\n", e);
+		}
+		return new SimpleEntry<String, String>(null, null);
 	}
 
-	
 	/**
 	 * Index a payload using the provided data using a groovy script
 	 * 
@@ -749,15 +536,6 @@ public class SolrIndexer implements Indexer {
 	}
 
 	/**
-	 * Call a manual commit against the index
-	 * 
-	 */
-	@Override
-	public void commit() {
-		sendToIndex("{ \"event\" : \"commit\" }");
-	}
-
-	/**
 	 * Add a new document into the buffer, and check if submission is required
 	 * 
 	 * @param document
@@ -796,98 +574,170 @@ public class SolrIndexer implements Indexer {
 	 */
 	private void sendToIndex(String message) {
 		try {
-			solrIndexHandler.queueMessage(SolrWrapperQueueConsumer.QUEUE_ID, message);
+			getMessaging().queueMessage(SolrWrapperQueueConsumer.QUEUE_ID, message);
 		} catch (MessagingException ex) {
 			log.error("Unable to send message: ", ex);
 		}
 	}
 
+
 	/**
-	 * Index an annotation
+	 * Index a specific annotation
 	 * 
-	 * @param oid
-	 *            : The identifier of the annotation's object
+	 * @param object
+	 *            : The annotation's object
 	 * @param pid
-	 *            : The identifier of the annotation
+	 *            : The annotation payload
 	 * @throws IndexerException
 	 *             if there were errors during indexing
 	 */
-	@Override
-	public void annotate(String oid, String pid) throws IndexerException {
-		// At this stage this is identical to the 'index()' method
-		// above, but there may be changes at a later date.
+	void annotate(DigitalObject object, Payload payload) throws IndexerException {
+		String pid = payload.getId();
+		if (propertiesId.equals(pid)) {
+			return;
+		}
+
 		try {
-			DigitalObject object = storage.getObject(oid);
-			Payload payload = object.getPayload(pid);
-			solrIndexHandler.annotate(object, payload);
-		} catch (StorageException ex) {
-			throw new IndexerException(ex);
+			Properties props = new Properties();
+			props.setProperty("metaPid", pid);
+
+			String doc = indexByPythonScript(object, payload, null, ANOTAR_RULES_OID, props);
+			if (doc != null) {
+				doc = "<add>" + doc + "</add>";
+				anotar.request(new DirectXmlRequest("/update", doc));
+				if (anotarAutoCommit) {
+					anotar.commit();
+				}
+			}
+		} catch (Exception e) {
+			log.error("Indexing failed!\n-----\n", e);
 		}
 	}
 
+	public void setPropertiesId(String propertiesId) {
+		this.propertiesId = propertiesId;
+	}
+
+	public void setConfig(JsonSimpleConfig config) {
+		this.config = config;
+	}
+
+	public void setAnotar(SolrServer anotar) {
+		this.anotar = anotar;
+	}
+
+	public void setAnotarAutoCommit(boolean anotarAutoCommit) {
+		this.anotarAutoCommit = anotarAutoCommit;
+	}
+
+	public void setUsernameMap(Map<String, String> usernameMap) {
+		this.usernameMap = usernameMap;
+	}
+
+	public void setPasswordMap(Map<String, String> passwordMap) {
+		this.passwordMap = passwordMap;
+	}
+
+	public void setLoaded(boolean loaded) {
+		this.loaded = loaded;
+	}
+
+	public void setCustomParams(Map<String, String> customParams) {
+		this.customParams = customParams;
+	}
+
+	public void setScriptCache(Map<String, PyObject> scriptCache) {
+		this.scriptCache = scriptCache;
+	}
+
+	public void setGroovyScriptCache(Map<String, String> groovyScriptCache) {
+		this.groovyScriptCache = groovyScriptCache;
+	}
+
+	public void setConfigCache(Map<String, JsonSimpleConfig> configCache) {
+		this.configCache = configCache;
+	}
+
+	public void setUseCache(boolean useCache) {
+		this.useCache = useCache;
+	}
+
+	public void setMessaging(MessagingServices messaging) {
+		this.messaging = messaging;
+	}
+
+	public void setSolrServerMap(Map<String, SolrServer> solrServerMap) {
+		this.solrServerMap = solrServerMap;
+	}
+
+	public void setEngine(ScriptEngine engine) {
+		this.engine = engine;
+	}
+
+	public SolrServer getSolr() {
+		return solr;
+	}
+
+	public void setSolr(SolrServer solr) {
+		this.solr = solr;
+	}
+
+	public void setStorage(Storage storage) {
+		this.storage = storage;
+	}
 
 	/**
-	 * Search the specified solr index (core) and return the result to the
-	 * provided stream
+	 * Index a payload using the provided data using a python script
 	 * 
-	 * @param request
-	 *            : The SearchRequest object
-	 * @param response
-	 *            : The OutputStream to send responses to
-	 * @param indexName
-	 *            : The name of the index
-	 * @throws IndexerException
+	 * @param object
+	 *            : The DigitalObject to index
+	 * @param payload
+	 *            : The Payload to index
+	 * @param in
+	 *            : Reader containing the new empty document
+	 * @param inConf
+	 *            : An InputStream holding the config file
+	 * @param rulesOid
+	 *            : The oid of the rules file to use
+	 * @param props
+	 *            : Properties object containing the object's metadata
+	 * @return File : Temporary file containing the output to index
+	 * @throws IOException
+	 *             if there were errors accessing files
+	 * @throws RuleException
 	 *             if there were errors during indexing
 	 */
-	@Override
-	public void searchByIndex(SearchRequest request, OutputStream response, String indexName) throws IndexerException {
-		SolrSearcher searcher = new SolrSearcher(((CommonsHttpSolrServer) solrServerMap.get(indexName)).getBaseURL());
-		String username = usernameMap.get(indexName);
-		String password = passwordMap.get(indexName);
-		if (!username.equals("") && !password.equals("")) {
-			searcher.authenticate(username, password);
-		}
-		InputStream result;
+	private String indexByPythonScript(DigitalObject object, Payload payload, String confOid, String rulesOid,
+			Properties props) throws IOException, RuleException {
 		try {
-			request.addParam("wt", "json");
-			result = searcher.get(request.getQuery(), request.getParamsMap(), false);
-			IOUtils.copy(result, response);
-			result.close();
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
+			JsonSimpleConfig jsonConfig = getConfigFile(confOid);
+
+			// Get our data ready
+			Map<String, Object> bindings = new HashMap<String, Object>();
+			Map<String, List<String>> fields = new HashMap<String, List<String>>();
+			bindings.put("fields", fields);
+			bindings.put("jsonConfig", jsonConfig);
+			bindings.put("indexer", this);
+			bindings.put("object", object);
+			bindings.put("payload", payload);
+			bindings.put("params", props);
+			bindings.put("pyUtils", getPyUtils());
+			bindings.put("log", log);
+
+			// Run the data through our script
+			PyObject script = getPythonObject(rulesOid);
+			if (script.__findattr__(SCRIPT_ACTIVATE_METHOD) != null) {
+				script.invoke(SCRIPT_ACTIVATE_METHOD, Py.java2py(bindings));
+				object.close();
+			} else {
+				log.warn("Activation method not found!");
+			}
+
+			return getPyUtils().solrDocument(fields);
+		} catch (Exception e) {
+			throw new RuleException(e);
 		}
 	}
-
-	/**
-	 * Search for annotations and return the result to the provided stream
-	 * 
-	 * @param request
-	 *            : The SearchRequest object
-	 * @param response
-	 *            : The OutputStream to send responses to
-	 * @throws IndexerException
-	 *             if there were errors during indexing
-	 */
-	@Override
-	public void annotateSearch(SearchRequest request, OutputStream response) throws IndexerException {
-		SolrSearcher searcher = new SolrSearcher(((CommonsHttpSolrServer) anotar).getBaseURL());
-		String username = usernameMap.get("anotar");
-		String password = passwordMap.get("anotar");
-		if (!username.equals("") && !password.equals("")) {
-			searcher.authenticate(username, password);
-		}
-		InputStream result;
-		try {
-			request.addParam("wt", "json");
-			result = searcher.get(request.getQuery(), request.getParamsMap(), false);
-			IOUtils.copy(result, response);
-			result.close();
-		} catch (IOException ioe) {
-			throw new IndexerException(ioe);
-		}
-	}
-
-
 
 	/**
 	 * Evaluate the rules file stored under the provided object ID. If caching
@@ -1048,24 +898,13 @@ public class SolrIndexer implements Indexer {
 		return null;
 	}
 
-	@Override
-	public List<Object> getJsonObjectWithField(String fieldName, String fieldValue) throws IndexerException {
-		List<Object> objects = new ArrayList<Object>();
-		try {
-			String query = fieldName + ":" + fieldValue;
-			log.debug("getJsonObjectWithField Query: " + query);
-			SearchRequest request = new SearchRequest(query);
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
-			search(request, out);
-			SolrResult results = new SolrResult(new ByteArrayInputStream(out.toByteArray()));
-			log.debug("getJsonObjectWithField number of results: " + results.getNumFound());
-			for (SolrDoc result : results.getResults()) {
-				objects.add(result);
-			}
-		} catch (Exception ex) {
-			log.debug("getJsonObjectWithField exception : " + ex);
-			throw new IndexerException(ex);
-		}
-		return objects;
+	public void shutdown() throws IndexerException {
+		getPyUtils().shutdown();
 	}
+
+	public void queueMessage(String queueId, String message) throws MessagingException {
+		getMessaging().queueMessage(SolrWrapperQueueConsumer.QUEUE_ID, message);
+	}
+
+
 }
