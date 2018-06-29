@@ -31,6 +31,48 @@
         <tokenizer class="solr.WhitespaceTokenizerFactory" />
       </analyzer>
     </fieldType>
+    
+    <!-- autocomplete_ngram : Matches any word in the input field, with implicit right truncation.
+		     This means that the field "A brown fox" will be matched by query "bro".
+		     We use this to get partial matches, but these whould be boosted lower than exact and left-anchored
+		-->
+		<fieldType name="autocomplete_ngram" class="solr.TextField">
+			<analyzer type="index">
+				<charFilter class="solr.MappingCharFilterFactory" mapping="mapping-ISOLatin1Accent.txt"/>
+				<tokenizer class="solr.StandardTokenizerFactory"/>
+				<filter class="solr.WordDelimiterFilterFactory" generateWordParts="1" generateNumberParts="1" catenateWords="0" catenateNumbers="0" catenateAll="0" splitOnCaseChange="1"/>
+				<filter class="solr.LowerCaseFilterFactory"/>
+				<filter class="solr.EdgeNGramFilterFactory" maxGramSize="20" minGramSize="1"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="([^\w\d\*æøåÆØÅ ])" replacement="" replace="all"/>
+			</analyzer>
+			<analyzer type="query">
+				<charFilter class="solr.MappingCharFilterFactory" mapping="mapping-ISOLatin1Accent.txt"/>
+				<tokenizer class="solr.StandardTokenizerFactory"/>
+				<filter class="solr.WordDelimiterFilterFactory" generateWordParts="0" generateNumberParts="0" catenateWords="0" catenateNumbers="0" catenateAll="0" splitOnCaseChange="0"/>
+				<filter class="solr.LowerCaseFilterFactory"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="([^\w\d\*æøåÆØÅ ])" replacement="" replace="all"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="^(.{20})(.*)?" replacement="$1" replace="all"/>
+			</analyzer>
+		</fieldType>
+		
+	<fieldType name="autocomplete_edge" class="solr.TextField">
+			<analyzer type="index">
+				<charFilter class="solr.MappingCharFilterFactory" mapping="mapping-ISOLatin1Accent.txt"/>
+				<tokenizer class="solr.KeywordTokenizerFactory"/>
+				<filter class="solr.LowerCaseFilterFactory"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="([\.,;:-_])" replacement=" " replace="all"/>
+				<filter class="solr.EdgeNGramFilterFactory" maxGramSize="50" minGramSize="1"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="([^\w\d\*æøåÆØÅ ])" replacement="" replace="all"/>
+			</analyzer>
+			<analyzer type="query">
+				<charFilter class="solr.MappingCharFilterFactory" mapping="mapping-ISOLatin1Accent.txt"/>
+				<tokenizer class="solr.KeywordTokenizerFactory"/>
+				<filter class="solr.LowerCaseFilterFactory"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="([\.,;:-_])" replacement=" " replace="all"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="([^\w\d\*æøåÆØÅ ])" replacement="" replace="all"/>
+				<filter class="solr.PatternReplaceFilterFactory" pattern="^(.{50})(.*)?" replacement="$1" replace="all"/>
+			</analyzer>
+		</fieldType>
 
     <!-- a text field that uses WordDelimiterFilter to enable splitting and matching
          of words on case-change, alpha numeric boundaries, and non-alphanumeric chars,
@@ -204,6 +246,8 @@
     -->
     <dynamicField name="int_*" type="sint" indexed="true" stored="true" />
     <dynamicField name="text_*" type="text" indexed="true" stored="true" />
+    <dynamicField name="autocomplete_*" type="autocomplete_ngram" indexed="true" stored="true" />
+    <dynamicField name="autocompleteEdge_*" type="autocomplete_ngram" indexed="true" stored="false" />
     <dynamicField name="str_*" type="string" indexed="true" stored="true" />
     <dynamicField name="bool_*" type="boolean" indexed="true" stored="true" />
     <dynamicField name="float_*" type="sfloat" indexed="true" stored="true" />
@@ -246,7 +290,8 @@
   <!-- Sortable text fields -->
   <copyField source="dc_title" dest="sort_text_title" />
   <copyField source="dc_type" dest="sort_text_type" />
-
+  <copyField source="autocomplete_*" dest="autocompleteEdge_*" />
   <copyField source="*" dest="full_text" />
 
 </schema>
+
