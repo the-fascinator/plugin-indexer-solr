@@ -9,7 +9,7 @@
     <parent>
       <artifactId>organisation</artifactId>
       <groupId>com.googlecode.the-fascinator</groupId>
-      <version>1.0.3</version>
+      <version>1.0.5-SNAPSHOT</version>
     </parent>
     <dependencies>
         <dependency>

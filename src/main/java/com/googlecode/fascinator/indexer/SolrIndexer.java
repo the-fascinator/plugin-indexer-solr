@@ -21,10 +21,8 @@ package com.googlecode.fascinator.indexer;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
@@ -33,14 +31,13 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.Properties;
 
-import javax.naming.directory.SearchResult;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
@@ -79,8 +76,8 @@ import com.googlecode.fascinator.common.JsonSimpleConfig;
 import com.googlecode.fascinator.common.PythonUtils;
 import com.googlecode.fascinator.common.messaging.MessagingException;
 import com.googlecode.fascinator.common.messaging.MessagingServices;
-import com.googlecode.fascinator.common.solr.SolrResult;
 import com.googlecode.fascinator.common.solr.SolrDoc;
+import com.googlecode.fascinator.common.solr.SolrResult;
 
 /**
  * <p>
@@ -611,7 +608,9 @@ public class SolrIndexer implements Indexer {
 			oldManifest = object.getPayloadIdList().toArray(oldManifest);
 			for (String payloadId : oldManifest) {
 				Payload payload = object.getPayload(payloadId);
-				index(object, payload);
+				if (!payload.getLabel().matches("version_tfpackage_.*")) {
+					index(object, payload);
+				}
 			}
 		} catch (StorageException ex) {
 			throw new IndexerException(ex);
